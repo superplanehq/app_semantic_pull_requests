@@ -59,19 +59,90 @@ spec:
     sourceId: validate-title
     targetId: if-should-enforce
   nodes:
-  - component: readMemory
+  - component: runnerJS
     configuration:
-      emitMode: allAtOnce
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-amd64
+      script: |
+        const ALL_TYPES = [
+          "feat", "fix", "docs", "chore", "invalid",
+        ];
+
+        function main() {
+          const prep = $["Prepare weekly merge"].data.result || {};
+          const week = prep.week;
+          const type = prep.type || "invalid";
+          const existing = ($["Read weekly stat"].data.values[0] || {});
+
+          const row = { week: week, total: 0 };
+          for (const t of ALL_TYPES) {
+            row[t] = Number(existing[t]) || 0;
+          }
+          row[type] = (row[type] || 0) + 1;
+          for (const t of ALL_TYPES) {
+            row.total += row[t];
+          }
+          return row;
+        }
+    id: runnerjs-bump-weekly-stat-27827c
+    name: Bump weekly stat
+    position:
+      x: 3320
+      "y": 260
+    type: TYPE_ACTION
+  - component: github.publishCommitStatus
+    configuration:
+      context: Semantic PR title
+      description: '{{ $["Validate title"].data.result.reason }}'
+      repository: "{{ root().data.repository.name }}"
+      sha: "{{ root().data.pull_request.head.sha }}"
+      state: failure
+    id: publish-failure-status
+    integration:
+      id: 879eee5b-a973-4822-b4f2-0dc1df8b9680
+    name: Publish failure status
+    position:
+      x: 2688
+      "y": 744
+    type: TYPE_ACTION
+  - component: upsertMemory
+    configuration:
       matchList:
       - name: week
-        value: '{{ $["Prepare weekly merge"].data.result.week }}'
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
       namespace: semanticPrWeeklyStats
-      resultMode: latest
-    id: read-weekly-stat
-    name: Read weekly stat
+      valueList:
+      - name: week
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
+      - name: total
+        value: '{{ $["Bump weekly stat"].data.result.total }}'
+      - name: feat
+        value: '{{ $["Bump weekly stat"].data.result.feat }}'
+      - name: fix
+        value: '{{ $["Bump weekly stat"].data.result.fix }}'
+      - name: docs
+        value: '{{ $["Bump weekly stat"].data.result.docs }}'
+      - name: chore
+        value: '{{ $["Bump weekly stat"].data.result.chore }}'
+      - name: invalid
+        value: '{{ $["Bump weekly stat"].data.result.invalid }}'
+    id: upsert-weekly-stat
+    name: Upsert weekly stat
     position:
-      x: 2680
-      "y": 80
+      x: 3960
+      "y": 260
+    type: TYPE_ACTION
+  - component: filter
+    configuration:
+      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
+        == true }}'
+    id: filter-merged
+    name: Merged PRs
+    position:
+      x: 1400
+      "y": 260
     type: TYPE_ACTION
   - component: if
     configuration:
@@ -80,9 +151,54 @@ spec:
     id: if-should-comment
     name: Should comment?
     position:
-      x: 3320
-      "y": 620
+      x: 3312
+      "y": 648
     type: TYPE_ACTION
+  - component: github.createIssueComment
+    configuration:
+      body: |
+        :x: This pull request title does not follow [semantic pull request](https://github.com/marketplace/actions/semantic-pull-request) conventions.
+
+        **Title:** `{{ root().data.pull_request.title }}`
+
+        **Reason:** {{ $["Validate title"].data.result.reason }}
+
+        **Expected format:** `<type>: <description>` or `<type>(<scope>): <description>`
+
+        **Allowed types:** {{ $["Validate title"].data.result.allowedTypesText }}
+
+        **Examples:**
+        - `feat: Add user authentication`
+        - `fix: Handle timeout in webhook handler`
+        - `docs: Update installation guide`
+        - `chore: Bump dependencies`
+      issueNumber: "{{ root().data.pull_request.number }}"
+      repository: "{{ root().data.repository.name }}"
+    id: comment-failure
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    name: Comment on PR
+    position:
+      x: 3960
+      "y": 648
+    type: TYPE_ACTION
+  - component: start
+    configuration:
+      templates:
+      - name: run
+        parameters:
+        - name: repository
+          placeholder: e.g. github/octocat
+          title: Repository
+          type: string
+        payload:
+          repository: "{{ parameters.repository }}"
+    id: trigger-setup
+    name: Setup
+    position:
+      x: 120
+      "y": 1260
+    type: TYPE_TRIGGER
   - component: runnerJS
     configuration:
       enable_setup_commands: false
@@ -115,6 +231,77 @@ spec:
       x: 2040
       "y": 260
     type: TYPE_ACTION
+  - component: upsertMemory
+    configuration:
+      itemVariable: weekStat
+      iterateList: true
+      listSource: $["Fetch weekly stats"].data.result.weeks
+      matchList:
+      - name: week
+        value: weekStat.week
+      namespace: semanticPrWeeklyStats
+      valueList:
+      - name: week
+        value: weekStat.week
+      - name: total
+        value: weekStat.total
+      - name: feat
+        value: weekStat.feat
+      - name: fix
+        value: weekStat.fix
+      - name: docs
+        value: weekStat.docs
+      - name: chore
+        value: weekStat.chore
+      - name: invalid
+        value: weekStat.invalid
+    id: import-weekly-stats
+    isCollapsed: true
+    name: Import weekly stats
+    position:
+      x: 1400
+      "y": 1260
+    type: TYPE_ACTION
+  - component: if
+    configuration:
+      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
+        || root().data.action == "synchronize" }}'
+    id: if-should-enforce
+    name: Should enforce title?
+    position:
+      x: 1400
+      "y": 620
+    type: TYPE_ACTION
+  - component: if
+    configuration:
+      expression: '{{ $["Validate title"].data.result.valid == true }}'
+    id: if-title-valid
+    name: Title valid?
+    position:
+      x: 2040
+      "y": 620
+    type: TYPE_ACTION
+  - component: github.onPullRequest
+    configuration:
+      actions:
+      - opened
+      - synchronize
+      - closed
+      - edited
+      repository: superplane
+    id: trigger-on-pull-request
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    metadata:
+      repository:
+        id: 979560403.0
+        name: superplane
+        url: https://github.com/superplanehq/superplane
+    name: On Pull Request
+    position:
+      x: 120
+      "y": 456
+    type: TYPE_TRIGGER
   - component: github.publishCommitStatus
     configuration:
       context: Semantic PR title
@@ -127,36 +314,65 @@ spec:
       id: 879eee5b-a973-4822-b4f2-0dc1df8b9680
     name: Publish success status
     position:
-      x: 2680
-      "y": 800
+      x: 2688
+      "y": 552
     type: TYPE_ACTION
-  - component: github.createIssueComment
+  - component: runnerJS
     configuration:
-      body: |
-        :x: This pull request title does not follow [semantic pull request](https://github.com/marketplace/actions/semantic-pull-request) conventions.
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-amd64
+      script: |
+        function main() {
+          const event = $["On Pull Request"].data || {};
+          const title = String(event.pull_request?.title || "").trim();
+          const allowedTypes = [
+            "feat", "fix", "docs", "chore",
+          ];
+          const typePattern = allowedTypes.join("|");
+          const semanticPattern = new RegExp(
+            "^(" + typePattern + ")(\\([a-z0-9._/-]+\\))?!?: .+$",
+            "i",
+          );
 
-        **Title:** `{{ root().data.pull_request.title }}`
+          if (!title) {
+            return {
+              valid: false,
+              title,
+              type: "invalid",
+              reason: "Pull request title is empty.",
+              allowedTypesText: allowedTypes.join(", "),
+            };
+          }
 
-        **Reason:** {{ $["Validate title"].data.result.reason }}
+          if (!semanticPattern.test(title)) {
+            return {
+              valid: false,
+              title,
+              type: "invalid",
+              reason:
+                "Title must start with a semantic type (" +
+                allowedTypes.join(", ") +
+                ").",
+              allowedTypesText: allowedTypes.join(", "),
+            };
+          }
 
-        **Expected format:** `<type>: <description>` or `<type>(<scope>): <description>`
-
-        **Allowed types:** {{ $["Validate title"].data.result.allowedTypesText }}
-
-        **Examples:**
-        - `feat: Add user authentication`
-        - `fix: Handle timeout in webhook handler`
-        - `docs: Update installation guide`
-        - `chore: Bump dependencies`
-      issueNumber: "{{ root().data.pull_request.number }}"
-      repository: "{{ root().data.repository.name }}"
-    id: comment-failure
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    name: Comment on PR
+          const match = title.match(new RegExp("^(" + typePattern + ")", "i"));
+          return {
+            valid: true,
+            title,
+            type: match ? match[1].toLowerCase() : "invalid",
+            reason: "",
+            allowedTypesText: allowedTypes.join(", "),
+          };
+        }
+    id: validate-title
+    name: Validate title
     position:
-      x: 3960
-      "y": 620
+      x: 672
+      "y": 456
     type: TYPE_ACTION
   - component: runnerJS
     configuration:
@@ -406,232 +622,17 @@ spec:
       x: 760
       "y": 1260
     type: TYPE_ACTION
-  - component: if
+  - component: readMemory
     configuration:
-      expression: '{{ $["Validate title"].data.result.valid == true }}'
-    id: if-title-valid
-    name: Title valid?
-    position:
-      x: 2040
-      "y": 620
-    type: TYPE_ACTION
-  - component: upsertMemory
-    configuration:
+      emitMode: allAtOnce
       matchList:
       - name: week
-        value: '{{ $["Bump weekly stat"].data.result.week }}'
+        value: '{{ $["Prepare weekly merge"].data.result.week }}'
       namespace: semanticPrWeeklyStats
-      valueList:
-      - name: week
-        value: '{{ $["Bump weekly stat"].data.result.week }}'
-      - name: total
-        value: '{{ $["Bump weekly stat"].data.result.total }}'
-      - name: feat
-        value: '{{ $["Bump weekly stat"].data.result.feat }}'
-      - name: fix
-        value: '{{ $["Bump weekly stat"].data.result.fix }}'
-      - name: docs
-        value: '{{ $["Bump weekly stat"].data.result.docs }}'
-      - name: chore
-        value: '{{ $["Bump weekly stat"].data.result.chore }}'
-      - name: invalid
-        value: '{{ $["Bump weekly stat"].data.result.invalid }}'
-    id: upsert-weekly-stat
-    name: Upsert weekly stat
+      resultMode: latest
+    id: read-weekly-stat
+    name: Read weekly stat
     position:
-      x: 3960
-      "y": 260
-    type: TYPE_ACTION
-  - component: runnerJS
-    configuration:
-      enable_setup_commands: false
-      execution_mode: host
-      execution_timeout_seconds: 60
-      machine_type: e1-tiny-amd64
-      script: |
-        const ALL_TYPES = [
-          "feat", "fix", "docs", "chore", "invalid",
-        ];
-
-        function main() {
-          const prep = $["Prepare weekly merge"].data.result || {};
-          const week = prep.week;
-          const type = prep.type || "invalid";
-          const existing = ($["Read weekly stat"].data.values[0] || {});
-
-          const row = { week: week, total: 0 };
-          for (const t of ALL_TYPES) {
-            row[t] = Number(existing[t]) || 0;
-          }
-          row[type] = (row[type] || 0) + 1;
-          for (const t of ALL_TYPES) {
-            row.total += row[t];
-          }
-          return row;
-        }
-    id: runnerjs-bump-weekly-stat-27827c
-    name: Bump weekly stat
-    position:
-      x: 3320
-      "y": 260
-    type: TYPE_ACTION
-  - component: github.publishCommitStatus
-    configuration:
-      context: Semantic PR title
-      description: '{{ $["Validate title"].data.result.reason }}'
-      repository: "{{ root().data.repository.name }}"
-      sha: "{{ root().data.pull_request.head.sha }}"
-      state: failure
-    id: publish-failure-status
-    integration:
-      id: 879eee5b-a973-4822-b4f2-0dc1df8b9680
-    name: Publish failure status
-    position:
-      x: 2680
-      "y": 440
-    type: TYPE_ACTION
-  - component: upsertMemory
-    configuration:
-      itemVariable: weekStat
-      iterateList: true
-      listSource: $["Fetch weekly stats"].data.result.weeks
-      matchList:
-      - name: week
-        value: weekStat.week
-      namespace: semanticPrWeeklyStats
-      valueList:
-      - name: week
-        value: weekStat.week
-      - name: total
-        value: weekStat.total
-      - name: feat
-        value: weekStat.feat
-      - name: fix
-        value: weekStat.fix
-      - name: docs
-        value: weekStat.docs
-      - name: chore
-        value: weekStat.chore
-      - name: invalid
-        value: weekStat.invalid
-    id: import-weekly-stats
-    isCollapsed: true
-    name: Import weekly stats
-    position:
-      x: 1400
-      "y": 1260
-    type: TYPE_ACTION
-  - component: filter
-    configuration:
-      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
-        == true }}'
-    id: filter-merged
-    name: Merged PRs
-    position:
-      x: 1400
-      "y": 260
-    type: TYPE_ACTION
-  - component: runnerJS
-    configuration:
-      enable_setup_commands: false
-      execution_mode: host
-      execution_timeout_seconds: 60
-      machine_type: e1-tiny-amd64
-      script: |
-        function main() {
-          const event = $["On Pull Request"].data || {};
-          const title = String(event.pull_request?.title || "").trim();
-          const allowedTypes = [
-            "feat", "fix", "docs", "chore",
-          ];
-          const typePattern = allowedTypes.join("|");
-          const semanticPattern = new RegExp(
-            "^(" + typePattern + ")(\\([a-z0-9._/-]+\\))?!?: .+$",
-            "i",
-          );
-
-          if (!title) {
-            return {
-              valid: false,
-              title,
-              type: "invalid",
-              reason: "Pull request title is empty.",
-              allowedTypesText: allowedTypes.join(", "),
-            };
-          }
-
-          if (!semanticPattern.test(title)) {
-            return {
-              valid: false,
-              title,
-              type: "invalid",
-              reason:
-                "Title must start with a semantic type (" +
-                allowedTypes.join(", ") +
-                ") followed by ': ' and a description.",
-              allowedTypesText: allowedTypes.join(", "),
-            };
-          }
-
-          const match = title.match(new RegExp("^(" + typePattern + ")", "i"));
-          return {
-            valid: true,
-            title,
-            type: match ? match[1].toLowerCase() : "invalid",
-            reason: "",
-            allowedTypesText: allowedTypes.join(", "),
-          };
-        }
-    id: validate-title
-    name: Validate title
-    position:
-      x: 760
-      "y": 440
-    type: TYPE_ACTION
-  - component: start
-    configuration:
-      templates:
-      - name: run
-        parameters:
-        - name: repository
-          placeholder: e.g. github/octocat
-          title: Repository
-          type: string
-        payload:
-          repository: "{{ parameters.repository }}"
-    id: trigger-setup
-    name: Setup
-    position:
-      x: 120
-      "y": 1260
-    type: TYPE_TRIGGER
-  - component: github.onPullRequest
-    configuration:
-      actions:
-      - opened
-      - synchronize
-      - closed
-      repository: superplane
-    id: trigger-on-pull-request
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    metadata:
-      repository:
-        id: 979560403.0
-        name: superplane
-        url: https://github.com/superplanehq/superplane
-    name: On Pull Request
-    position:
-      x: 120
-      "y": 440
-    type: TYPE_TRIGGER
-  - component: if
-    configuration:
-      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
-        || root().data.action == "synchronize" }}'
-    id: if-should-enforce
-    name: Should enforce title?
-    position:
-      x: 1400
-      "y": 620
+      x: 2688
+      "y": 240
     type: TYPE_ACTION
