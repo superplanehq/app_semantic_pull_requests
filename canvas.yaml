@@ -4,11 +4,252 @@ kind: Canvas
 metadata:
   id: 95fd1b27-f905-48cc-aff1-43972d5754db
   name: app-semantic-pull-requests
-  description: Validate semantic pull request titles and track merged PRs by title
-    type.
+  description: Validate semantic pull request titles and track weekly merge statistics
+    by type.
   isTemplate: false
 spec:
   nodes:
+  - id: publish-failure-status
+    name: Publish failure status
+    type: TYPE_ACTION
+    component: github.publishCommitStatus
+    configuration:
+      context: Semantic PR title
+      description: '{{ $["Validate title"].data.result.reason }}'
+      repository: "{{ root().data.repository.name }}"
+      sha: "{{ root().data.pull_request.head.sha }}"
+      state: failure
+    position:
+      x: 2760
+      "y": 420
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: prepare-weekly-merge
+    name: Prepare weekly merge
+    type: TYPE_ACTION
+    component: runnerJS
+    configuration:
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-arm64
+      script: |
+        function isoWeekNumber(isoDate) {
+          const d = new Date(isoDate);
+          const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+          const dayNum = target.getUTCDay() || 7;
+          target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+          const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+          return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+        }
+
+        function main() {
+          const event = $["On Pull Request"].data || {};
+          const mergedAt = event.pull_request?.merged_at || new Date().toISOString();
+          const type = ($["Validate title"].data.result || {}).type || "invalid";
+
+          return {
+            week: isoWeekNumber(mergedAt),
+            type: type,
+          };
+        }
+    position:
+      x: 2100
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: trigger-setup
+    name: Setup
+    type: TYPE_TRIGGER
+    component: start
+    configuration:
+      templates:
+      - name: run
+        parameters:
+        - name: repository
+          placeholder: e.g. github/octocat
+          title: Repository
+          type: string
+        payload:
+          repository: "{{ parameters.repository }}"
+    position:
+      x: 120
+      "y": 520
+    isCollapsed: false
+    paused: false
+  - id: filter-merged
+    name: Merged PRs
+    type: TYPE_ACTION
+    component: filter
+    configuration:
+      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
+        == true }}'
+    position:
+      x: 1440
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: read-weekly-stat
+    name: Read weekly stat
+    type: TYPE_ACTION
+    component: readMemory
+    configuration:
+      emitMode: allAtOnce
+      matchList:
+      - name: week
+        value: '{{ $["Prepare weekly merge"].data.result.week }}'
+      namespace: semanticPrWeeklyStats
+      resultMode: latest
+    position:
+      x: 2760
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: upsert-weekly-stat
+    name: Upsert weekly stat
+    type: TYPE_ACTION
+    component: upsertMemory
+    configuration:
+      matchList:
+      - name: week
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
+      namespace: semanticPrWeeklyStats
+      valueList:
+      - name: week
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
+      - name: total
+        value: '{{ $["Bump weekly stat"].data.result.total }}'
+      - name: feat
+        value: '{{ $["Bump weekly stat"].data.result.feat }}'
+      - name: fix
+        value: '{{ $["Bump weekly stat"].data.result.fix }}'
+      - name: docs
+        value: '{{ $["Bump weekly stat"].data.result.docs }}'
+      - name: chore
+        value: '{{ $["Bump weekly stat"].data.result.chore }}'
+      - name: invalid
+        value: '{{ $["Bump weekly stat"].data.result.invalid }}'
+    position:
+      x: 4080
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: if-should-comment
+    name: Should comment?
+    type: TYPE_ACTION
+    component: if
+    configuration:
+      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
+        }}'
+    position:
+      x: 3420
+      "y": 420
+    isCollapsed: false
+    paused: false
+  - id: trigger-on-pull-request
+    name: On Pull Request
+    type: TYPE_TRIGGER
+    component: github.onPullRequest
+    configuration:
+      actions:
+      - opened
+      repository: superplane
+    metadata:
+      repository:
+        id: 979560403
+        name: superplane
+        url: https://github.com/superplanehq/superplane
+    position:
+      x: 120
+      "y": 200
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: comment-failure
+    name: Comment on PR
+    type: TYPE_ACTION
+    component: github.createIssueComment
+    configuration:
+      body: |
+        :x: This pull request title does not follow [semantic pull request](https://github.com/marketplace/actions/semantic-pull-request) conventions.
+
+        **Title:** `{{ root().data.pull_request.title }}`
+
+        **Reason:** {{ $["Validate title"].data.result.reason }}
+
+        **Expected format:** `<type>: <description>` or `<type>(<scope>): <description>`
+
+        **Allowed types:** {{ $["Validate title"].data.result.allowedTypesText }}
+
+        **Examples:**
+        - `feat: Add user authentication`
+        - `fix: Handle timeout in webhook handler`
+        - `docs: Update installation guide`
+        - `chore: Bump dependencies`
+      issueNumber: "{{ root().data.pull_request.number }}"
+      repository: "{{ root().data.repository.name }}"
+    position:
+      x: 4080
+      "y": 420
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: publish-success-status
+    name: Publish success status
+    type: TYPE_ACTION
+    component: github.publishCommitStatus
+    configuration:
+      context: Semantic PR title
+      description: Title is valid ({{ $["Validate title"].data.result.type }}).
+      repository: "{{ root().data.repository.name }}"
+      sha: "{{ root().data.pull_request.head.sha }}"
+      state: success
+    position:
+      x: 2760
+      "y": 300
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: runnerjs-bump-weekly-stat-27827c
+    name: Bump weekly stat
+    type: TYPE_ACTION
+    component: runnerJS
+    configuration:
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-arm64
+      script: |
+        const ALL_TYPES = [
+          "feat", "fix", "docs", "chore", "invalid",
+        ];
+
+        function main() {
+          const prep = $["Prepare weekly merge"].data.result || {};
+          const week = prep.week;
+          const type = prep.type || "invalid";
+          const existing = ($["Read weekly stat"].data.values[0] || {});
+
+          const row = { week: week, total: 0 };
+          for (const t of ALL_TYPES) {
+            row[t] = Number(existing[t]) || 0;
+          }
+          row[type] = (row[type] || 0) + 1;
+          for (const t of ALL_TYPES) {
+            row.total += row[t];
+          }
+          return row;
+        }
+    position:
+      x: 3420
+      "y": 80
+    isCollapsed: false
+    paused: false
   - id: if-title-valid
     name: Title valid?
     type: TYPE_ACTION
@@ -20,21 +261,8 @@ spec:
       "y": 320
     isCollapsed: false
     paused: false
-  - id: publish-success-status
-    name: Publish success status
-    type: TYPE_ACTION
-    component: github.publishCommitStatus
-    configuration:
-      repository: superplane
-    position:
-      x: 2760
-      "y": 280
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: fetch-merged-prs
-    name: Fetch merged PRs
+  - id: fetch-weekly-stats
+    name: Fetch weekly stats
     type: TYPE_ACTION
     component: runnerJS
     configuration:
@@ -47,12 +275,12 @@ spec:
         valueSource: secret
       execution_mode: host
       execution_timeout_seconds: 600
-      machine_type: e1-tiny-arm64
+      machine_type: e1-tiny-amd64
       script: |
-        const ALLOWED_TYPES = [
-          "feat", "fix", "docs", "chore", "ci",
-          "build", "test", "refactor", "perf", "style", "revert",
+        const ALL_TYPES = [
+          "feat", "fix", "docs", "chore", "invalid",
         ];
+        const ALLOWED_TYPES = ALL_TYPES.slice(0, -1);
         const TYPE_PATTERN = new RegExp("^(" + ALLOWED_TYPES.join("|") + ")", "i");
         const SEMANTIC_PATTERN = new RegExp(
           "^(" + ALLOWED_TYPES.join("|") + ")(\\([a-z0-9._\\/-]+\\))?!?: .+$",
@@ -70,144 +298,250 @@ spec:
 
         function resolveRepository() {
           const setup = ($["Setup"] && $["Setup"].data) || {};
-          const trigger = ($["On Pull Request"] && $["On Pull Request"].config) || {};
-          const repository = String(setup.repository || trigger.repository || "").trim();
+          const repository = String(setup.repository || "").trim();
           if (!repository) {
             throw new Error(
-              "Select a repository on the On Pull Request trigger before running Setup.",
+              "Provide a repository when running Setup (for example: owner/repo).",
             );
           }
           return repository;
         }
 
-        async function githubFetch(url) {
+        function githubHeaders() {
           const headers = {
             Accept: "application/vnd.github+json",
+            "Content-Type": "application/json",
             "X-GitHub-Api-Version": "2022-11-28",
           };
           if (process.env.GITHUB_TOKEN) {
             headers.Authorization = "Bearer " + process.env.GITHUB_TOKEN;
           }
-
-          const response = await fetch(url, { headers });
-          if (!response.ok) {
-            throw new Error(
-              "GitHub API error " + response.status + ": " + (await response.text()),
-            );
-          }
-          return response.json();
+          return headers;
         }
 
-        async function fetchMergedPrs(repository) {
+        async function githubGraphql(query, variables) {
+          const response = await fetch("https://api.github.com/graphql", {
+            method: "POST",
+            headers: githubHeaders(),
+            body: JSON.stringify({ query: query, variables: variables || {} }),
+          });
+          const body = await response.json();
+          if (!response.ok) {
+            throw new Error(
+              "GitHub API error " + response.status + ": " + JSON.stringify(body),
+            );
+          }
+          if (body.errors && body.errors.length > 0) {
+            throw new Error("GitHub GraphQL error: " + JSON.stringify(body.errors));
+          }
+          return body.data;
+        }
+
+        function parseRepository(repository) {
+          const slash = repository.indexOf("/");
+          if (slash <= 0 || slash === repository.length - 1) {
+            throw new Error("Repository must be in owner/repo format.");
+          }
+          return {
+            owner: repository.slice(0, slash),
+            repo: repository.slice(slash + 1),
+          };
+        }
+
+        function isoWeekNumber(isoDate) {
+          const d = new Date(isoDate);
+          const target = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+          const dayNum = target.getUTCDay() || 7;
+          target.setUTCDate(target.getUTCDate() + 4 - dayNum);
+          const yearStart = new Date(Date.UTC(target.getUTCFullYear(), 0, 1));
+          return Math.ceil((((target - yearStart) / 86400000) + 1) / 7);
+        }
+
+        function createLogger() {
+          const logs = [];
+          return {
+            logs: logs,
+            info: function (message) {
+              const line = String(message);
+              console.log(line);
+              logs.push(line);
+            },
+          };
+        }
+
+        async function fetchWeeklyStats(repository, logger) {
           const year = new Date().getFullYear();
           const since = year + "-01-01";
-          const query = "repo:" + repository + " is:pr is:merged merged:>=" + since;
-          const merges = [];
-          let page = 1;
+          const sinceMs = new Date(since + "T00:00:00Z").getTime();
+          const parts = parseRepository(repository);
+          const buckets = new Map();
+          let total = 0;
+          let cursor = null;
+          let page = 0;
+          const query = [
+            "query($owner: String!, $name: String!, $cursor: String) {",
+            "  repository(owner: $owner, name: $name) {",
+            "    pullRequests(states: MERGED, first: 100, after: $cursor) {",
+            "      pageInfo { hasNextPage endCursor }",
+            "      nodes { title mergedAt }",
+            "    }",
+            "  }",
+            "}",
+          ].join("\n");
+
+          logger.info("Fetching merged PRs for " + repository + " since " + since);
 
           while (true) {
-            const url =
-              "https://api.github.com/search/issues?q=" +
-              encodeURIComponent(query) +
-              "&per_page=100&page=" +
-              page;
-            const data = await githubFetch(url);
-            const items = data.items || [];
-            if (items.length === 0) {
+            page += 1;
+            logger.info("Requesting page " + page + " from GitHub GraphQL");
+
+            const data = await githubGraphql(query, {
+              owner: parts.owner,
+              name: parts.repo,
+              cursor: cursor,
+            });
+            const connection =
+              data && data.repository && data.repository.pullRequests;
+            const nodes = (connection && connection.nodes) || [];
+            if (nodes.length === 0) {
+              logger.info("Page " + page + " returned no merged PRs, stopping");
               break;
             }
 
-            for (const issue of items) {
-              const mergedAt =
-                issue.pull_request && issue.pull_request.merged_at
-                  ? issue.pull_request.merged_at
-                  : null;
+            let pageCount = 0;
+            for (const pr of nodes) {
+              const mergedAt = pr.mergedAt;
               if (!mergedAt) {
                 continue;
               }
 
-              merges.push({
-                pr_number: String(issue.number),
-                repository: repository,
-                title: String(issue.title || ""),
-                type: parseType(issue.title),
-                merged_at: String(Math.floor(new Date(mergedAt).getTime() / 1000)),
-              });
+              const mergedMs = new Date(mergedAt).getTime();
+              if (mergedMs < sinceMs) {
+                continue;
+              }
+
+              const week = isoWeekNumber(mergedAt);
+              const type = parseType(pr.title);
+              const key = week + "|" + type;
+              buckets.set(key, (buckets.get(key) || 0) + 1);
+              total += 1;
+              pageCount += 1;
             }
 
-            const totalCount = Number(data.total_count || 0);
-            if (items.length < 100 || merges.length >= totalCount) {
+            logger.info(
+              "Page " +
+                page +
+                ": scanned " +
+                nodes.length +
+                " merged PRs, counted " +
+                pageCount +
+                " for " +
+                year +
+                " (running total: " +
+                total +
+                ")",
+            );
+
+            const pageInfo = connection && connection.pageInfo;
+            if (!pageInfo || !pageInfo.hasNextPage) {
+              logger.info("No more pages, finished fetching from GitHub");
               break;
             }
 
-            page += 1;
+            cursor = pageInfo.endCursor;
             await new Promise(function (resolve) {
-              setTimeout(resolve, 2000);
+              setTimeout(resolve, 500);
             });
           }
 
-          merges.sort(function (a, b) {
-            return Number(a.merged_at) - Number(b.merged_at);
+          logger.info("Aggregating weekly statistics");
+
+          const byWeek = new Map();
+          for (const entry of buckets.entries()) {
+            const key = entry[0];
+            const count = entry[1];
+            const separator = key.indexOf("|");
+            const week = Number(key.slice(0, separator));
+            const type = key.slice(separator + 1);
+            if (!byWeek.has(week)) {
+              const row = { week: week, total: 0 };
+              for (const t of ALL_TYPES) {
+                row[t] = 0;
+              }
+              byWeek.set(week, row);
+            }
+            const row = byWeek.get(week);
+            row[type] = (row[type] || 0) + count;
+            row.total += count;
+          }
+
+          const weeks = Array.from(byWeek.values());
+          weeks.sort(function (a, b) {
+            return a.week - b.week;
           });
+
+          const payload = {
+            total: total,
+            weeks: weeks,
+          };
+
+          logger.info(
+            "Done: " + weeks.length + " weeks with data, " + total + " merges in " + year,
+          );
+          logger.info("Payload: " + JSON.stringify(payload, null, 2));
 
           return {
             repository: repository,
             since: since,
-            count: merges.length,
-            merges: merges,
+            total: total,
+            weeks: weeks,
+            payload: payload,
+            logs: logger.logs,
           };
         }
 
         function main() {
+          const logger = createLogger();
           const repository = resolveRepository();
-          return fetchMergedPrs(repository);
+          logger.info("Setup started for repository " + repository);
+          return fetchWeeklyStats(repository, logger);
         }
     position:
       x: 780
       "y": 520
-    isCollapsed: true
+    isCollapsed: false
     paused: false
-  - id: import-historical-merges
-    name: Import historical merges
+  - id: import-weekly-stats
+    name: Import weekly stats
     type: TYPE_ACTION
     component: upsertMemory
     configuration:
-      itemVariable: merge
+      itemVariable: weekStat
       iterateList: true
-      listSource: $["Fetch merged PRs"].data.result.merges
+      listSource: $["Fetch weekly stats"].data.result.weeks
       matchList:
-      - name: pr_number
-        value: merge.pr_number
-      - name: repository
-        value: merge.repository
-      namespace: semanticPrMerges
+      - name: week
+        value: weekStat.week
+      namespace: semanticPrWeeklyStats
       valueList:
-      - name: pr_number
-        value: merge.pr_number
-      - name: repository
-        value: merge.repository
-      - name: title
-        value: merge.title
-      - name: type
-        value: merge.type
-      - name: merged_at
-        value: merge.merged_at
+      - name: week
+        value: weekStat.week
+      - name: total
+        value: weekStat.total
+      - name: feat
+        value: weekStat.feat
+      - name: fix
+        value: weekStat.fix
+      - name: docs
+        value: weekStat.docs
+      - name: chore
+        value: weekStat.chore
+      - name: invalid
+        value: weekStat.invalid
     position:
       x: 1440
       "y": 520
     isCollapsed: true
-    paused: false
-  - id: if-should-enforce
-    name: Should enforce title?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
-        || root().data.action == "synchronize" }}'
-    position:
-      x: 1440
-      "y": 320
-    isCollapsed: false
     paused: false
   - id: validate-title
     name: Validate title
@@ -223,8 +557,7 @@ spec:
           const event = $["On Pull Request"].data || {};
           const title = String(event.pull_request?.title || "").trim();
           const allowedTypes = [
-            "feat", "fix", "docs", "chore", "ci",
-            "build", "test", "refactor", "perf", "style", "revert",
+            "feat", "fix", "docs", "chore",
           ];
           const typePattern = allowedTypes.join("|");
           const semanticPattern = new RegExp(
@@ -269,124 +602,37 @@ spec:
       "y": 200
     isCollapsed: false
     paused: false
-  - id: if-should-comment
-    name: Should comment?
+  - id: if-should-enforce
+    name: Should enforce title?
     type: TYPE_ACTION
     component: if
     configuration:
       expression: '{{ root().data.action == "opened" || root().data.action == "edited"
-        }}'
-    position:
-      x: 3420
-      "y": 400
-    isCollapsed: false
-    paused: false
-  - id: record-pr-merge
-    name: Record PR merge
-    type: TYPE_ACTION
-    component: upsertMemory
-    configuration:
-      matchList:
-      - name: pr_number
-        value: "{{ root().data.pull_request.number }}"
-      - name: repository
-        value: "{{ root().data.repository.full_name }}"
-      namespace: semanticPrMerges
-      valueList:
-      - name: pr_number
-        value: "{{ root().data.pull_request.number }}"
-      - name: repository
-        value: "{{ root().data.repository.full_name }}"
-      - name: title
-        value: "{{ root().data.pull_request.title }}"
-      - name: type
-        value: '{{ $["Validate title"].data.result.type }}'
-      - name: merged_at
-        value: "{{ int(now().Unix()) }}"
-    position:
-      x: 2100
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: comment-failure
-    name: Comment on PR
-    type: TYPE_ACTION
-    component: github.createIssueComment
-    configuration:
-      repository: superplane
-    position:
-      x: 4080
-      "y": 400
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: trigger-setup
-    name: Setup
-    type: TYPE_TRIGGER
-    component: start
-    configuration:
-      templates:
-      - name: run
-        payload:
-          repository: '{{ $["On Pull Request"].configuration.repository }}'
-    position:
-      x: 120
-      "y": 520
-    isCollapsed: false
-    paused: false
-  - id: if-merged
-    name: Is merged?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
-        == true }}'
+        || root().data.action == "synchronize" }}'
     position:
       x: 1440
-      "y": 80
+      "y": 320
     isCollapsed: false
-    paused: false
-  - id: trigger-on-pull-request
-    name: On Pull Request
-    type: TYPE_TRIGGER
-    component: github.onPullRequest
-    configuration:
-      actions:
-      - opened
-      repository: superplane
-    metadata:
-      repository:
-        id: 979560403
-        name: superplane
-        url: https://github.com/superplanehq/superplane
-    position:
-      x: 120
-      "y": 200
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: publish-failure-status
-    name: Publish failure status
-    type: TYPE_ACTION
-    component: github.publishCommitStatus
-    configuration:
-      repository: superplane
-    position:
-      x: 2760
-      "y": 400
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
     paused: false
   edges:
-  - sourceId: fetch-merged-prs
-    targetId: import-historical-merges
+  - sourceId: fetch-weekly-stats
+    targetId: import-weekly-stats
     channel: passed
-  - sourceId: if-merged
-    targetId: record-pr-merge
-    channel: 'true'
+  - sourceId: filter-merged
+    targetId: prepare-weekly-merge
+    channel: default
+  - sourceId: prepare-weekly-merge
+    targetId: read-weekly-stat
+    channel: passed
+  - sourceId: read-weekly-stat
+    targetId: runnerjs-bump-weekly-stat-27827c
+    channel: found
+  - sourceId: read-weekly-stat
+    targetId: runnerjs-bump-weekly-stat-27827c
+    channel: notFound
+  - sourceId: runnerjs-bump-weekly-stat-27827c
+    targetId: upsert-weekly-stat
+    channel: passed
   - sourceId: if-should-comment
     targetId: comment-failure
     channel: 'true'
@@ -406,10 +652,10 @@ spec:
     targetId: validate-title
     channel: default
   - sourceId: trigger-setup
-    targetId: fetch-merged-prs
+    targetId: fetch-weekly-stats
     channel: default
   - sourceId: validate-title
-    targetId: if-merged
+    targetId: filter-merged
     channel: passed
   - sourceId: validate-title
     targetId: if-should-enforce

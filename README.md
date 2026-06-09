@@ -9,11 +9,11 @@ Built with [SuperPlane](https://superplane.com).
 ## How it works
 
 1. **On pull request** — listen for `opened`, `edited`, `synchronize`, and `closed` events on a selected repository
-2. **Validate title** — check the title against conventional commit types (`feat`, `fix`, `docs`, `chore`, `ci`, `build`, `test`, `refactor`, `perf`, `style`, `revert`)
+2. **Validate title** — check the title against semantic types (`feat`, `fix`, `docs`, `chore`)
 3. **Enforce** — on open, edit, or sync, publish a **Semantic PR title** commit status (success or failure) and comment on invalid titles when a PR is opened or edited
-4. **Record merges** — when a PR is merged, store `pr_number`, `title`, `type`, and `merged_at` in the `semanticPrMerges` memory namespace
-5. **Setup** — backfill merged PRs from the current year via the GitHub API into memory
-6. **Console** — merged PR count, bar chart by title, and a sortable table of all merges
+4. **Record merges** — when a PR is merged, increment the weekly count for its semantic `type` in the `semanticPrWeeklyStats` memory namespace
+5. **Setup** — run with a `repository` parameter (`owner/repo`) to backfill weekly merge statistics for the current year
+6. **Console** — totals by type this year and a bar chart of merged PRs by week
 
 ## Prerequisites
 
@@ -22,9 +22,11 @@ Built with [SuperPlane](https://superplane.com).
 
 ## Setup
 
+Run **Setup** and enter the repository as `owner/repo` (for example, `superplanehq/superplane`).
+
 ## `GITHUB_TOKEN` secret
 
-Add a secret named `GITHUB_TOKEN` on the **Fetch merged PRs** node. It is used only by **Setup** to backfill merged PRs from the current year via the GitHub Search API.
+Add a secret named `GITHUB_TOKEN` on the **Fetch weekly stats** node. It is used only by **Setup** to backfill weekly merge statistics for the current year.
 
 - **Private repositories:** required
 - **Public repositories:** optional, but recommended to avoid unauthenticated API rate limits
