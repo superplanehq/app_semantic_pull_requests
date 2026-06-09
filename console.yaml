@@ -5,16 +5,71 @@ metadata:
   canvasId: 95fd1b27-f905-48cc-aff1-43972d5754db
   name: app-semantic-pull-requests
 spec:
+  layout:
+  - h: 3
+    i: setup-panel
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 0
+  - h: 2
+    i: kpi-total
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 3
+  - h: 2
+    i: kpi-feat
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 5
+  - h: 2
+    i: kpi-fix
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 7
+  - h: 2
+    i: kpi-docs
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 9
+  - h: 2
+    i: kpi-chore
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 11
+  - h: 2
+    i: kpi-invalid
+    minH: 2
+    minW: 2
+    w: 4
+    x: 0
+    "y": 13
+  - h: 15
+    i: chart-merges-by-week
+    minH: 4
+    minW: 5
+    w: 8
+    x: 4
+    "y": 0
   panels:
-  - id: setup-panel
-    type: node
-    content:
+  - content:
       node: Setup
       showRun: true
       title: Setup
-  - id: kpi-total
-    type: number
-    content:
+    id: setup-panel
+    type: node
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -23,9 +78,9 @@ spec:
         field: total
         kind: number
       title: Total
-  - id: kpi-feat
+    id: kpi-total
     type: number
-    content:
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -34,9 +89,9 @@ spec:
         field: feat
         kind: number
       title: feat
-  - id: kpi-fix
+    id: kpi-feat
     type: number
-    content:
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -45,9 +100,9 @@ spec:
         field: fix
         kind: number
       title: fix
-  - id: kpi-docs
+    id: kpi-fix
     type: number
-    content:
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -56,9 +111,9 @@ spec:
         field: docs
         kind: number
       title: docs
-  - id: kpi-chore
+    id: kpi-docs
     type: number
-    content:
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -67,9 +122,9 @@ spec:
         field: chore
         kind: number
       title: chore
-  - id: kpi-invalid
+    id: kpi-chore
     type: number
-    content:
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -78,9 +133,9 @@ spec:
         field: invalid
         kind: number
       title: invalid
-  - id: chart-merges-by-week
-    type: chart
-    content:
+    id: kpi-invalid
+    type: number
+  - content:
       dataSource:
         kind: memory
         namespace: semanticPrWeeklyStats
@@ -110,60 +165,5 @@ spec:
         type: stacked-bar
         xField: '{{ "W" + string(week) }}'
       title: Merged by week
-  layout:
-  - i: setup-panel
-    x: 0
-    "y": 0
-    w: 4
-    h: 3
-    minW: 2
-    minH: 2
-  - i: kpi-total
-    x: 0
-    "y": 3
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: kpi-feat
-    x: 0
-    "y": 5
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: kpi-fix
-    x: 0
-    "y": 7
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: kpi-docs
-    x: 0
-    "y": 9
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: kpi-chore
-    x: 0
-    "y": 11
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: kpi-invalid
-    x: 0
-    "y": 13
-    w: 4
-    h: 2
-    minW: 2
-    minH: 2
-  - i: chart-merges-by-week
-    x: 4
-    "y": 0
-    w: 8
-    h: 15
-    minW: 5
-    minH: 4
+    id: chart-merges-by-week
+    type: chart

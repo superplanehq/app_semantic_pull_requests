@@ -2,39 +2,93 @@
 apiVersion: v1
 kind: Canvas
 metadata:
-  id: 95fd1b27-f905-48cc-aff1-43972d5754db
-  name: app-semantic-pull-requests
   description: Validate semantic pull request titles and track weekly merge statistics
     by type.
+  id: 95fd1b27-f905-48cc-aff1-43972d5754db
   isTemplate: false
+  name: app-semantic-pull-requests
+  organizationId: 3ee1aa47-3a60-4c1f-b645-0b9859ab91f8
 spec:
+  changeManagement:
+    approvals:
+    - type: TYPE_ANYONE
+  edges:
+  - channel: passed
+    sourceId: fetch-weekly-stats
+    targetId: import-weekly-stats
+  - channel: default
+    sourceId: filter-merged
+    targetId: prepare-weekly-merge
+  - channel: passed
+    sourceId: prepare-weekly-merge
+    targetId: read-weekly-stat
+  - channel: found
+    sourceId: read-weekly-stat
+    targetId: runnerjs-bump-weekly-stat-27827c
+  - channel: notFound
+    sourceId: read-weekly-stat
+    targetId: runnerjs-bump-weekly-stat-27827c
+  - channel: passed
+    sourceId: runnerjs-bump-weekly-stat-27827c
+    targetId: upsert-weekly-stat
+  - channel: 'true'
+    sourceId: if-should-comment
+    targetId: comment-failure
+  - channel: 'true'
+    sourceId: if-should-enforce
+    targetId: if-title-valid
+  - channel: 'false'
+    sourceId: if-title-valid
+    targetId: publish-failure-status
+  - channel: 'true'
+    sourceId: if-title-valid
+    targetId: publish-success-status
+  - channel: default
+    sourceId: publish-failure-status
+    targetId: if-should-comment
+  - channel: default
+    sourceId: trigger-on-pull-request
+    targetId: validate-title
+  - channel: default
+    sourceId: trigger-setup
+    targetId: fetch-weekly-stats
+  - channel: passed
+    sourceId: validate-title
+    targetId: filter-merged
+  - channel: passed
+    sourceId: validate-title
+    targetId: if-should-enforce
   nodes:
-  - id: publish-failure-status
-    name: Publish failure status
-    type: TYPE_ACTION
-    component: github.publishCommitStatus
+  - component: readMemory
     configuration:
-      context: Semantic PR title
-      description: '{{ $["Validate title"].data.result.reason }}'
-      repository: "{{ root().data.repository.name }}"
-      sha: "{{ root().data.pull_request.head.sha }}"
-      state: failure
+      emitMode: allAtOnce
+      matchList:
+      - name: week
+        value: '{{ $["Prepare weekly merge"].data.result.week }}'
+      namespace: semanticPrWeeklyStats
+      resultMode: latest
+    id: read-weekly-stat
+    name: Read weekly stat
     position:
-      x: 2760
-      "y": 420
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: prepare-weekly-merge
-    name: Prepare weekly merge
+      x: 2680
+      "y": 80
     type: TYPE_ACTION
-    component: runnerJS
+  - component: if
+    configuration:
+      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
+        }}'
+    id: if-should-comment
+    name: Should comment?
+    position:
+      x: 3320
+      "y": 620
+    type: TYPE_ACTION
+  - component: runnerJS
     configuration:
       enable_setup_commands: false
       execution_mode: host
       execution_timeout_seconds: 60
-      machine_type: e1-tiny-arm64
+      machine_type: e1-tiny-amd64
       script: |
         function isoWeekNumber(isoDate) {
           const d = new Date(isoDate);
@@ -55,123 +109,28 @@ spec:
             type: type,
           };
         }
+    id: prepare-weekly-merge
+    name: Prepare weekly merge
     position:
-      x: 2100
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: trigger-setup
-    name: Setup
-    type: TYPE_TRIGGER
-    component: start
-    configuration:
-      templates:
-      - name: run
-        parameters:
-        - name: repository
-          placeholder: e.g. github/octocat
-          title: Repository
-          type: string
-        payload:
-          repository: "{{ parameters.repository }}"
-    position:
-      x: 120
-      "y": 520
-    isCollapsed: false
-    paused: false
-  - id: filter-merged
-    name: Merged PRs
+      x: 2040
+      "y": 260
     type: TYPE_ACTION
-    component: filter
+  - component: github.publishCommitStatus
     configuration:
-      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
-        == true }}'
-    position:
-      x: 1440
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: read-weekly-stat
-    name: Read weekly stat
-    type: TYPE_ACTION
-    component: readMemory
-    configuration:
-      emitMode: allAtOnce
-      matchList:
-      - name: week
-        value: '{{ $["Prepare weekly merge"].data.result.week }}'
-      namespace: semanticPrWeeklyStats
-      resultMode: latest
-    position:
-      x: 2760
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: upsert-weekly-stat
-    name: Upsert weekly stat
-    type: TYPE_ACTION
-    component: upsertMemory
-    configuration:
-      matchList:
-      - name: week
-        value: '{{ $["Bump weekly stat"].data.result.week }}'
-      namespace: semanticPrWeeklyStats
-      valueList:
-      - name: week
-        value: '{{ $["Bump weekly stat"].data.result.week }}'
-      - name: total
-        value: '{{ $["Bump weekly stat"].data.result.total }}'
-      - name: feat
-        value: '{{ $["Bump weekly stat"].data.result.feat }}'
-      - name: fix
-        value: '{{ $["Bump weekly stat"].data.result.fix }}'
-      - name: docs
-        value: '{{ $["Bump weekly stat"].data.result.docs }}'
-      - name: chore
-        value: '{{ $["Bump weekly stat"].data.result.chore }}'
-      - name: invalid
-        value: '{{ $["Bump weekly stat"].data.result.invalid }}'
-    position:
-      x: 4080
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: if-should-comment
-    name: Should comment?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
-        }}'
-    position:
-      x: 3420
-      "y": 420
-    isCollapsed: false
-    paused: false
-  - id: trigger-on-pull-request
-    name: On Pull Request
-    type: TYPE_TRIGGER
-    component: github.onPullRequest
-    configuration:
-      actions:
-      - opened
-      repository: superplane
-    metadata:
-      repository:
-        id: 979560403
-        name: superplane
-        url: https://github.com/superplanehq/superplane
-    position:
-      x: 120
-      "y": 200
-    isCollapsed: false
+      context: Semantic PR title
+      description: Title is valid ({{ $["Validate title"].data.result.type }}).
+      repository: "{{ root().data.repository.name }}"
+      sha: "{{ root().data.pull_request.head.sha }}"
+      state: success
+    id: publish-success-status
     integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: comment-failure
-    name: Comment on PR
+      id: 879eee5b-a973-4822-b4f2-0dc1df8b9680
+    name: Publish success status
+    position:
+      x: 2680
+      "y": 800
     type: TYPE_ACTION
-    component: github.createIssueComment
+  - component: github.createIssueComment
     configuration:
       body: |
         :x: This pull request title does not follow [semantic pull request](https://github.com/marketplace/actions/semantic-pull-request) conventions.
@@ -191,80 +150,15 @@ spec:
         - `chore: Bump dependencies`
       issueNumber: "{{ root().data.pull_request.number }}"
       repository: "{{ root().data.repository.name }}"
-    position:
-      x: 4080
-      "y": 420
-    isCollapsed: false
+    id: comment-failure
     integration:
       id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: publish-success-status
-    name: Publish success status
-    type: TYPE_ACTION
-    component: github.publishCommitStatus
-    configuration:
-      context: Semantic PR title
-      description: Title is valid ({{ $["Validate title"].data.result.type }}).
-      repository: "{{ root().data.repository.name }}"
-      sha: "{{ root().data.pull_request.head.sha }}"
-      state: success
+    name: Comment on PR
     position:
-      x: 2760
-      "y": 300
-    isCollapsed: false
-    integration:
-      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
-    paused: false
-  - id: runnerjs-bump-weekly-stat-27827c
-    name: Bump weekly stat
+      x: 3960
+      "y": 620
     type: TYPE_ACTION
-    component: runnerJS
-    configuration:
-      enable_setup_commands: false
-      execution_mode: host
-      execution_timeout_seconds: 60
-      machine_type: e1-tiny-arm64
-      script: |
-        const ALL_TYPES = [
-          "feat", "fix", "docs", "chore", "invalid",
-        ];
-
-        function main() {
-          const prep = $["Prepare weekly merge"].data.result || {};
-          const week = prep.week;
-          const type = prep.type || "invalid";
-          const existing = ($["Read weekly stat"].data.values[0] || {});
-
-          const row = { week: week, total: 0 };
-          for (const t of ALL_TYPES) {
-            row[t] = Number(existing[t]) || 0;
-          }
-          row[type] = (row[type] || 0) + 1;
-          for (const t of ALL_TYPES) {
-            row.total += row[t];
-          }
-          return row;
-        }
-    position:
-      x: 3420
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: if-title-valid
-    name: Title valid?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ $["Validate title"].data.result.valid == true }}'
-    position:
-      x: 2100
-      "y": 320
-    isCollapsed: false
-    paused: false
-  - id: fetch-weekly-stats
-    name: Fetch weekly stats
-    type: TYPE_ACTION
-    component: runnerJS
+  - component: runnerJS
     configuration:
       enable_setup_commands: false
       environment:
@@ -506,15 +400,97 @@ spec:
           logger.info("Setup started for repository " + repository);
           return fetchWeeklyStats(repository, logger);
         }
+    id: fetch-weekly-stats
+    name: Fetch weekly stats
     position:
-      x: 780
-      "y": 520
-    isCollapsed: false
-    paused: false
-  - id: import-weekly-stats
-    name: Import weekly stats
+      x: 760
+      "y": 1260
     type: TYPE_ACTION
-    component: upsertMemory
+  - component: if
+    configuration:
+      expression: '{{ $["Validate title"].data.result.valid == true }}'
+    id: if-title-valid
+    name: Title valid?
+    position:
+      x: 2040
+      "y": 620
+    type: TYPE_ACTION
+  - component: upsertMemory
+    configuration:
+      matchList:
+      - name: week
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
+      namespace: semanticPrWeeklyStats
+      valueList:
+      - name: week
+        value: '{{ $["Bump weekly stat"].data.result.week }}'
+      - name: total
+        value: '{{ $["Bump weekly stat"].data.result.total }}'
+      - name: feat
+        value: '{{ $["Bump weekly stat"].data.result.feat }}'
+      - name: fix
+        value: '{{ $["Bump weekly stat"].data.result.fix }}'
+      - name: docs
+        value: '{{ $["Bump weekly stat"].data.result.docs }}'
+      - name: chore
+        value: '{{ $["Bump weekly stat"].data.result.chore }}'
+      - name: invalid
+        value: '{{ $["Bump weekly stat"].data.result.invalid }}'
+    id: upsert-weekly-stat
+    name: Upsert weekly stat
+    position:
+      x: 3960
+      "y": 260
+    type: TYPE_ACTION
+  - component: runnerJS
+    configuration:
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-amd64
+      script: |
+        const ALL_TYPES = [
+          "feat", "fix", "docs", "chore", "invalid",
+        ];
+
+        function main() {
+          const prep = $["Prepare weekly merge"].data.result || {};
+          const week = prep.week;
+          const type = prep.type || "invalid";
+          const existing = ($["Read weekly stat"].data.values[0] || {});
+
+          const row = { week: week, total: 0 };
+          for (const t of ALL_TYPES) {
+            row[t] = Number(existing[t]) || 0;
+          }
+          row[type] = (row[type] || 0) + 1;
+          for (const t of ALL_TYPES) {
+            row.total += row[t];
+          }
+          return row;
+        }
+    id: runnerjs-bump-weekly-stat-27827c
+    name: Bump weekly stat
+    position:
+      x: 3320
+      "y": 260
+    type: TYPE_ACTION
+  - component: github.publishCommitStatus
+    configuration:
+      context: Semantic PR title
+      description: '{{ $["Validate title"].data.result.reason }}'
+      repository: "{{ root().data.repository.name }}"
+      sha: "{{ root().data.pull_request.head.sha }}"
+      state: failure
+    id: publish-failure-status
+    integration:
+      id: 879eee5b-a973-4822-b4f2-0dc1df8b9680
+    name: Publish failure status
+    position:
+      x: 2680
+      "y": 440
+    type: TYPE_ACTION
+  - component: upsertMemory
     configuration:
       itemVariable: weekStat
       iterateList: true
@@ -538,20 +514,29 @@ spec:
         value: weekStat.chore
       - name: invalid
         value: weekStat.invalid
-    position:
-      x: 1440
-      "y": 520
+    id: import-weekly-stats
     isCollapsed: true
-    paused: false
-  - id: validate-title
-    name: Validate title
+    name: Import weekly stats
+    position:
+      x: 1400
+      "y": 1260
     type: TYPE_ACTION
-    component: runnerJS
+  - component: filter
+    configuration:
+      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
+        == true }}'
+    id: filter-merged
+    name: Merged PRs
+    position:
+      x: 1400
+      "y": 260
+    type: TYPE_ACTION
+  - component: runnerJS
     configuration:
       enable_setup_commands: false
       execution_mode: host
       execution_timeout_seconds: 60
-      machine_type: e1-tiny-arm64
+      machine_type: e1-tiny-amd64
       script: |
         function main() {
           const event = $["On Pull Request"].data || {};
@@ -597,66 +582,56 @@ spec:
             allowedTypesText: allowedTypes.join(", "),
           };
         }
+    id: validate-title
+    name: Validate title
     position:
-      x: 780
-      "y": 200
-    isCollapsed: false
-    paused: false
-  - id: if-should-enforce
-    name: Should enforce title?
+      x: 760
+      "y": 440
     type: TYPE_ACTION
-    component: if
+  - component: start
+    configuration:
+      templates:
+      - name: run
+        parameters:
+        - name: repository
+          placeholder: e.g. github/octocat
+          title: Repository
+          type: string
+        payload:
+          repository: "{{ parameters.repository }}"
+    id: trigger-setup
+    name: Setup
+    position:
+      x: 120
+      "y": 1260
+    type: TYPE_TRIGGER
+  - component: github.onPullRequest
+    configuration:
+      actions:
+      - opened
+      - synchronize
+      - closed
+      repository: superplane
+    id: trigger-on-pull-request
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    metadata:
+      repository:
+        id: 979560403.0
+        name: superplane
+        url: https://github.com/superplanehq/superplane
+    name: On Pull Request
+    position:
+      x: 120
+      "y": 440
+    type: TYPE_TRIGGER
+  - component: if
     configuration:
       expression: '{{ root().data.action == "opened" || root().data.action == "edited"
         || root().data.action == "synchronize" }}'
+    id: if-should-enforce
+    name: Should enforce title?
     position:
-      x: 1440
-      "y": 320
-    isCollapsed: false
-    paused: false
-  edges:
-  - sourceId: fetch-weekly-stats
-    targetId: import-weekly-stats
-    channel: passed
-  - sourceId: filter-merged
-    targetId: prepare-weekly-merge
-    channel: default
-  - sourceId: prepare-weekly-merge
-    targetId: read-weekly-stat
-    channel: passed
-  - sourceId: read-weekly-stat
-    targetId: runnerjs-bump-weekly-stat-27827c
-    channel: found
-  - sourceId: read-weekly-stat
-    targetId: runnerjs-bump-weekly-stat-27827c
-    channel: notFound
-  - sourceId: runnerjs-bump-weekly-stat-27827c
-    targetId: upsert-weekly-stat
-    channel: passed
-  - sourceId: if-should-comment
-    targetId: comment-failure
-    channel: 'true'
-  - sourceId: if-should-enforce
-    targetId: if-title-valid
-    channel: 'true'
-  - sourceId: if-title-valid
-    targetId: publish-failure-status
-    channel: 'false'
-  - sourceId: if-title-valid
-    targetId: publish-success-status
-    channel: 'true'
-  - sourceId: publish-failure-status
-    targetId: if-should-comment
-    channel: default
-  - sourceId: trigger-on-pull-request
-    targetId: validate-title
-    channel: default
-  - sourceId: trigger-setup
-    targetId: fetch-weekly-stats
-    channel: default
-  - sourceId: validate-title
-    targetId: filter-merged
-    channel: passed
-  - sourceId: validate-title
-    targetId: if-should-enforce
-    channel: passed
+      x: 1400
+      "y": 620
+    type: TYPE_ACTION
