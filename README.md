@@ -20,6 +20,23 @@ Built with [SuperPlane](https://superplane.com).
 - [SuperPlane](https://superplane.com) account
 - GitHub integration connected to the target repository
 
+## Setup
+
+## `GITHUB_TOKEN` secret
+
+Add a secret named `GITHUB_TOKEN` on the **Fetch merged PRs** node. It is used only by **Setup** to backfill merged PRs from the current year via the GitHub Search API.
+
+- **Private repositories:** required
+- **Public repositories:** optional, but recommended to avoid unauthenticated API rate limits
+
+### Fine-grained personal access token (recommended)
+
+- **Repository access:** Only select repositories → choose the target repository
+- **Repository permissions:**
+  - **Metadata:** Read
+  - **Pull requests:** Read
+  - **Issues:** Read
+
 ## License
 
 MIT

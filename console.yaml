@@ -2,7 +2,7 @@
 apiVersion: v1
 kind: Console
 metadata:
-  canvasId: 9149d4ec-22a7-49ac-b7ae-7b92583e1641
+  canvasId: 95fd1b27-f905-48cc-aff1-43972d5754db
   name: app-semantic-pull-requests
 spec:
   panels:

@@ -2,139 +2,13 @@
 apiVersion: v1
 kind: Canvas
 metadata:
-  id: 9149d4ec-22a7-49ac-b7ae-7b92583e1641
+  id: 95fd1b27-f905-48cc-aff1-43972d5754db
   name: app-semantic-pull-requests
-  description: Validate semantic pull request titles and track merged PRs by title type.
+  description: Validate semantic pull request titles and track merged PRs by title
+    type.
   isTemplate: false
 spec:
   nodes:
-  - id: trigger-on-pull-request
-    name: On Pull Request
-    type: TYPE_TRIGGER
-    component: github.onPullRequest
-    configuration:
-      actions:
-      - opened
-      - edited
-      - synchronize
-      - closed
-      repository: ''
-    position:
-      x: 120
-      "y": 200
-    isCollapsed: false
-    paused: false
-  - id: validate-title
-    name: Validate title
-    type: TYPE_ACTION
-    component: runnerJS
-    configuration:
-      enable_setup_commands: false
-      execution_mode: host
-      execution_timeout_seconds: 60
-      machine_type: e1-tiny-arm64
-      script: |
-        function main() {
-          const event = $["On Pull Request"].data || {};
-          const title = String(event.pull_request?.title || "").trim();
-          const allowedTypes = [
-            "feat", "fix", "docs", "chore", "ci",
-            "build", "test", "refactor", "perf", "style", "revert",
-          ];
-          const typePattern = allowedTypes.join("|");
-          const semanticPattern = new RegExp(
-            "^(" + typePattern + ")(\\([a-z0-9._/-]+\\))?!?: .+$",
-            "i",
-          );
-
-          if (!title) {
-            return {
-              valid: false,
-              title,
-              type: "invalid",
-              reason: "Pull request title is empty.",
-              allowedTypesText: allowedTypes.join(", "),
-            };
-          }
-
-          if (!semanticPattern.test(title)) {
-            return {
-              valid: false,
-              title,
-              type: "invalid",
-              reason:
-                "Title must start with a semantic type (" +
-                allowedTypes.join(", ") +
-                ") followed by ': ' and a description.",
-              allowedTypesText: allowedTypes.join(", "),
-            };
-          }
-
-          const match = title.match(new RegExp("^(" + typePattern + ")", "i"));
-          return {
-            valid: true,
-            title,
-            type: match ? match[1].toLowerCase() : "invalid",
-            reason: "",
-            allowedTypesText: allowedTypes.join(", "),
-          };
-        }
-    position:
-      x: 780
-      "y": 200
-    isCollapsed: false
-    paused: false
-  - id: if-merged
-    name: Is merged?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged == true
-        }}'
-    position:
-      x: 1440
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: record-pr-merge
-    name: Record PR merge
-    type: TYPE_ACTION
-    component: upsertMemory
-    configuration:
-      matchList:
-      - name: pr_number
-        value: '{{ root().data.pull_request.number }}'
-      - name: repository
-        value: '{{ root().data.repository.full_name }}'
-      namespace: semanticPrMerges
-      valueList:
-      - name: pr_number
-        value: '{{ root().data.pull_request.number }}'
-      - name: repository
-        value: '{{ root().data.repository.full_name }}'
-      - name: title
-        value: '{{ root().data.pull_request.title }}'
-      - name: type
-        value: '{{ $["Validate title"].data.result.type }}'
-      - name: merged_at
-        value: '{{ int(now().Unix()) }}'
-    position:
-      x: 2100
-      "y": 80
-    isCollapsed: false
-    paused: false
-  - id: if-should-enforce
-    name: Should enforce title?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
-        || root().data.action == "synchronize" }}'
-    position:
-      x: 1440
-      "y": 320
-    isCollapsed: false
-    paused: false
   - id: if-title-valid
     name: Title valid?
     type: TYPE_ACTION
@@ -151,84 +25,13 @@ spec:
     type: TYPE_ACTION
     component: github.publishCommitStatus
     configuration:
-      context: Semantic PR title
-      description: 'Title is valid ({{ $["Validate title"].data.result.type }}).'
-      repository: '{{ root().data.repository.name }}'
-      sha: '{{ root().data.pull_request.head.sha }}'
-      state: success
+      repository: superplane
     position:
       x: 2760
       "y": 280
     isCollapsed: false
-    paused: false
-  - id: publish-failure-status
-    name: Publish failure status
-    type: TYPE_ACTION
-    component: github.publishCommitStatus
-    configuration:
-      context: Semantic PR title
-      description: '{{ $["Validate title"].data.result.reason }}'
-      repository: '{{ root().data.repository.name }}'
-      sha: '{{ root().data.pull_request.head.sha }}'
-      state: failure
-    position:
-      x: 2760
-      "y": 400
-    isCollapsed: false
-    paused: false
-  - id: if-should-comment
-    name: Should comment?
-    type: TYPE_ACTION
-    component: if
-    configuration:
-      expression: '{{ root().data.action == "opened" || root().data.action == "edited" }}'
-    position:
-      x: 3420
-      "y": 400
-    isCollapsed: false
-    paused: false
-  - id: comment-failure
-    name: Comment on PR
-    type: TYPE_ACTION
-    component: github.createIssueComment
-    configuration:
-      body: |
-        :x: This pull request title does not follow [semantic pull request](https://github.com/marketplace/actions/semantic-pull-request) conventions.
-
-        **Title:** `{{ root().data.pull_request.title }}`
-
-        **Reason:** {{ $["Validate title"].data.result.reason }}
-
-        **Expected format:** `<type>: <description>` or `<type>(<scope>): <description>`
-
-        **Allowed types:** {{ $["Validate title"].data.result.allowedTypesText }}
-
-        **Examples:**
-        - `feat: Add user authentication`
-        - `fix: Handle timeout in webhook handler`
-        - `docs: Update installation guide`
-        - `chore: Bump dependencies`
-        - `ci: Fix workflow cache key`
-      issueNumber: '{{ root().data.pull_request.number }}'
-      repository: '{{ root().data.repository.name }}'
-    position:
-      x: 4080
-      "y": 400
-    isCollapsed: false
-    paused: false
-  - id: trigger-setup
-    name: Setup
-    type: TYPE_TRIGGER
-    component: start
-    configuration:
-      templates:
-      - name: run
-        payload:
-          repository: '{{ $["On Pull Request"].configuration.repository }}'
-    position:
-      x: 120
-      "y": 520
-    isCollapsed: true
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
     paused: false
   - id: fetch-merged-prs
     name: Fetch merged PRs
@@ -236,6 +39,12 @@ spec:
     component: runnerJS
     configuration:
       enable_setup_commands: false
+      environment:
+      - name: GITHUB_TOKEN
+        secret:
+          key: token
+          secret: app-semantic-pull-requests
+        valueSource: secret
       execution_mode: host
       execution_timeout_seconds: 600
       machine_type: e1-tiny-arm64
@@ -365,7 +174,7 @@ spec:
     configuration:
       itemVariable: merge
       iterateList: true
-      listSource: '$["Fetch merged PRs"].data.result.merges'
+      listSource: $["Fetch merged PRs"].data.result.merges
       matchList:
       - name: pr_number
         value: merge.pr_number
@@ -388,9 +197,216 @@ spec:
       "y": 520
     isCollapsed: true
     paused: false
+  - id: if-should-enforce
+    name: Should enforce title?
+    type: TYPE_ACTION
+    component: if
+    configuration:
+      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
+        || root().data.action == "synchronize" }}'
+    position:
+      x: 1440
+      "y": 320
+    isCollapsed: false
+    paused: false
+  - id: validate-title
+    name: Validate title
+    type: TYPE_ACTION
+    component: runnerJS
+    configuration:
+      enable_setup_commands: false
+      execution_mode: host
+      execution_timeout_seconds: 60
+      machine_type: e1-tiny-arm64
+      script: |
+        function main() {
+          const event = $["On Pull Request"].data || {};
+          const title = String(event.pull_request?.title || "").trim();
+          const allowedTypes = [
+            "feat", "fix", "docs", "chore", "ci",
+            "build", "test", "refactor", "perf", "style", "revert",
+          ];
+          const typePattern = allowedTypes.join("|");
+          const semanticPattern = new RegExp(
+            "^(" + typePattern + ")(\\([a-z0-9._/-]+\\))?!?: .+$",
+            "i",
+          );
+
+          if (!title) {
+            return {
+              valid: false,
+              title,
+              type: "invalid",
+              reason: "Pull request title is empty.",
+              allowedTypesText: allowedTypes.join(", "),
+            };
+          }
+
+          if (!semanticPattern.test(title)) {
+            return {
+              valid: false,
+              title,
+              type: "invalid",
+              reason:
+                "Title must start with a semantic type (" +
+                allowedTypes.join(", ") +
+                ") followed by ': ' and a description.",
+              allowedTypesText: allowedTypes.join(", "),
+            };
+          }
+
+          const match = title.match(new RegExp("^(" + typePattern + ")", "i"));
+          return {
+            valid: true,
+            title,
+            type: match ? match[1].toLowerCase() : "invalid",
+            reason: "",
+            allowedTypesText: allowedTypes.join(", "),
+          };
+        }
+    position:
+      x: 780
+      "y": 200
+    isCollapsed: false
+    paused: false
+  - id: if-should-comment
+    name: Should comment?
+    type: TYPE_ACTION
+    component: if
+    configuration:
+      expression: '{{ root().data.action == "opened" || root().data.action == "edited"
+        }}'
+    position:
+      x: 3420
+      "y": 400
+    isCollapsed: false
+    paused: false
+  - id: record-pr-merge
+    name: Record PR merge
+    type: TYPE_ACTION
+    component: upsertMemory
+    configuration:
+      matchList:
+      - name: pr_number
+        value: "{{ root().data.pull_request.number }}"
+      - name: repository
+        value: "{{ root().data.repository.full_name }}"
+      namespace: semanticPrMerges
+      valueList:
+      - name: pr_number
+        value: "{{ root().data.pull_request.number }}"
+      - name: repository
+        value: "{{ root().data.repository.full_name }}"
+      - name: title
+        value: "{{ root().data.pull_request.title }}"
+      - name: type
+        value: '{{ $["Validate title"].data.result.type }}'
+      - name: merged_at
+        value: "{{ int(now().Unix()) }}"
+    position:
+      x: 2100
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: comment-failure
+    name: Comment on PR
+    type: TYPE_ACTION
+    component: github.createIssueComment
+    configuration:
+      repository: superplane
+    position:
+      x: 4080
+      "y": 400
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: trigger-setup
+    name: Setup
+    type: TYPE_TRIGGER
+    component: start
+    configuration:
+      templates:
+      - name: run
+        payload:
+          repository: '{{ $["On Pull Request"].configuration.repository }}'
+    position:
+      x: 120
+      "y": 520
+    isCollapsed: false
+    paused: false
+  - id: if-merged
+    name: Is merged?
+    type: TYPE_ACTION
+    component: if
+    configuration:
+      expression: '{{ root().data.action == "closed" && root().data.pull_request.merged
+        == true }}'
+    position:
+      x: 1440
+      "y": 80
+    isCollapsed: false
+    paused: false
+  - id: trigger-on-pull-request
+    name: On Pull Request
+    type: TYPE_TRIGGER
+    component: github.onPullRequest
+    configuration:
+      actions:
+      - opened
+      repository: superplane
+    metadata:
+      repository:
+        id: 979560403
+        name: superplane
+        url: https://github.com/superplanehq/superplane
+    position:
+      x: 120
+      "y": 200
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
+  - id: publish-failure-status
+    name: Publish failure status
+    type: TYPE_ACTION
+    component: github.publishCommitStatus
+    configuration:
+      repository: superplane
+    position:
+      x: 2760
+      "y": 400
+    isCollapsed: false
+    integration:
+      id: c1da9632-de2c-4f04-bcfa-ce9bea0d1219
+    paused: false
   edges:
+  - sourceId: fetch-merged-prs
+    targetId: import-historical-merges
+    channel: passed
+  - sourceId: if-merged
+    targetId: record-pr-merge
+    channel: 'true'
+  - sourceId: if-should-comment
+    targetId: comment-failure
+    channel: 'true'
+  - sourceId: if-should-enforce
+    targetId: if-title-valid
+    channel: 'true'
+  - sourceId: if-title-valid
+    targetId: publish-failure-status
+    channel: 'false'
+  - sourceId: if-title-valid
+    targetId: publish-success-status
+    channel: 'true'
+  - sourceId: publish-failure-status
+    targetId: if-should-comment
+    channel: default
   - sourceId: trigger-on-pull-request
     targetId: validate-title
+    channel: default
+  - sourceId: trigger-setup
+    targetId: fetch-merged-prs
     channel: default
   - sourceId: validate-title
     targetId: if-merged
@@ -398,27 +414,3 @@ spec:
   - sourceId: validate-title
     targetId: if-should-enforce
     channel: passed
-  - sourceId: if-merged
-    targetId: record-pr-merge
-    channel: 'true'
-  - sourceId: trigger-setup
-    targetId: fetch-merged-prs
-    channel: default
-  - sourceId: fetch-merged-prs
-    targetId: import-historical-merges
-    channel: passed
-  - sourceId: if-should-enforce
-    targetId: if-title-valid
-    channel: 'true'
-  - sourceId: if-title-valid
-    targetId: publish-success-status
-    channel: 'true'
-  - sourceId: if-title-valid
-    targetId: publish-failure-status
-    channel: 'false'
-  - sourceId: publish-failure-status
-    targetId: if-should-comment
-    channel: default
-  - sourceId: if-should-comment
-    targetId: comment-failure
-    channel: 'true'
