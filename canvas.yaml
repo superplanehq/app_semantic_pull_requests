@@ -4,14 +4,8 @@ kind: Canvas
 metadata:
   description: Validate semantic pull request titles and track weekly merge statistics
     by type.
-  id: 95fd1b27-f905-48cc-aff1-43972d5754db
-  isTemplate: false
-  name: app-semantic-pull-requests
-  organizationId: 3ee1aa47-3a60-4c1f-b645-0b9859ab91f8
+  name: Semantic Pull Requests
 spec:
-  changeManagement:
-    approvals:
-    - type: TYPE_ANYONE
   edges:
   - channel: passed
     sourceId: fetch-weekly-stats

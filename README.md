@@ -1,6 +1,6 @@
 # Semantic Pull Requests
 
-[![Launch in SuperPlane](http://superplane.com/badges/launch-in-superplane.svg)](https://app.superplane.com/install?repo=github.com/superplanehq/app_semantic_pull_requests)
+[![Launch in SuperPlane](https://superplane.com/badges/launch-in-superplane.svg)](https://app.superplane.com/install?repo=github.com/superplanehq/app_semantic_pull_requests)
 
 Enforce **semantic pull request titles** on GitHub and track merged PRs by type — publish commit statuses, comment on invalid titles, and see merge trends in the console.
 
